@@ -18,15 +18,15 @@ export ANTHROPIC_API_KEY=sk-ant-...
 streamlit run app.py
 ```
 
-## Deploy na DigitalOcean App Platform
+## Deploy na Render
 
-1. Wgraj kod na GitHub (repo: cashflow-analyzer)
+1. Wgraj kod na GitHub
 
-2. Utwórz nową aplikację w DigitalOcean App Platform:
-   - Region: Frankfurt (fra)
-   - Source: GitHub repo
-   - Build command: `pip install -r requirements.txt`
-   - Run command: `streamlit run app.py --server.port $PORT --server.address 0.0.0.0`
+2. Utwórz nową aplikację na [render.com](https://render.com):
+   - **New → Web Service** → połącz repo z GitHub
+   - Render wykryje `render.yaml` automatycznie
+   - Region: Frankfurt
+   - Plan: Free
 
 3. Dodaj zmienną środowiskową:
    - Key: `ANTHROPIC_API_KEY`
@@ -38,15 +38,19 @@ streamlit run app.py
 
 | Zmienna | Opis |
 |---------|------|
-| `ANTHROPIC_API_KEY` | Klucz API Anthropic (wymagany) |
+| `ANTHROPIC_API_KEY` | Klucz API Anthropic (wymagany do kategoryzacji AI) |
 
 ## Struktura projektu
 
 ```
-cashflow_analyzer/
-├── app.py              # Główna aplikacja Streamlit
-├── requirements.txt    # Zależności Python
-└── README.md          # Dokumentacja
+cashflow-analyzer/
+├── app.py                        # Główna aplikacja Streamlit
+├── requirements.txt              # Zależności Python
+├── render.yaml                   # Konfiguracja deploy (Render)
+├── .streamlit/
+│   ├── config.toml               # Ustawienia motywu i serwera
+│   └── secrets.toml.example      # Przykład pliku z kluczem API
+└── README.md
 ```
 
 ## Monetyzacja
