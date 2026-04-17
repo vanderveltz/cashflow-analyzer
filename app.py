@@ -504,7 +504,7 @@ else:
         df["month"] = df["date"].dt.to_period("M").astype(str)
         monthly = df.groupby("month").agg(
             przychody=("amount", lambda x: x[x > 0].sum()),
-            wydatki=("amount", lambda x: x[x < 0].sum().abs()),
+            wydatki=("amount", lambda x: abs(x[x < 0].sum())),
         ).reset_index().tail(12)
 
         fig = go.Figure()
