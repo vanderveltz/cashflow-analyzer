@@ -119,72 +119,92 @@ BANK_CONFIGS = {
         "sep": ";",
         "skip_rows": 0,
     },
+    "Millennium": {
+        "detect": lambda h: any("millennium" in x.lower() for x in h) or any(
+            ("data transakcji" in x.lower() or "data operacji" in x.lower()) and
+            any("rodzaj" in y.lower() or "saldo" in y.lower() for y in h)
+            for x in h
+        ),
+        "date": lambda h: next((x for x in h if "data transakcji" in x.lower() or "data operacji" in x.lower()), None),
+        "desc": lambda h: next((x for x in h if "tytuł" in x.lower() or "opis" in x.lower() or "nadawca" in x.lower()), None),
+        "amount": lambda h: next((x for x in h if "kwota" in x.lower()), None),
+        "sep": ";",
+        "skip_rows": 0,
+    },
 }
+
+def decode_file(raw: bytes) -> str:
+    """Try common Polish bank encodings."""
+    for enc in ("utf-8-sig", "utf-8", "cp1250", "iso-8859-2", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
 
 def detect_bank_and_parse(content: str) -> tuple[pd.DataFrame, str]:
     """Auto-detect bank format and parse CSV."""
     lines = content.split("\n")
-    
+
     # Try different separators and header positions
     for sep in [";", ","]:
-        for skip in range(0, min(30, len(lines))):
+        for skip in range(0, min(35, len(lines))):
             try:
                 df = pd.read_csv(
                     io.StringIO("\n".join(lines[skip:])),
                     sep=sep,
-                    encoding="utf-8",
                     on_bad_lines="skip",
                     nrows=5,
                 )
                 if len(df.columns) >= 3:
                     headers = [str(c) for c in df.columns]
-                    
+
                     # Detect bank
                     bank_name = "Inny bank"
                     for name, cfg in BANK_CONFIGS.items():
                         if cfg["detect"](headers):
                             bank_name = name
                             break
-                    
+
                     # Get config
                     cfg = BANK_CONFIGS.get(bank_name, {
                         "date": lambda h: next((x for x in h if "dat" in x.lower()), None),
-                        "desc": lambda h: next((x for x in h if "opis" in x.lower() or "tytuł" in x.lower() or "nadawca" in x.lower()), None),
+                        "desc": lambda h: next((x for x in h if "opis" in x.lower() or "tytu" in x.lower() or "nadawca" in x.lower()), None),
                         "amount": lambda h: next((x for x in h if "kwota" in x.lower()), None),
                     })
-                    
+
                     date_col = cfg["date"](headers)
                     desc_col = cfg["desc"](headers)
                     amount_col = cfg["amount"](headers)
-                    
+
                     if not (date_col and amount_col):
                         continue
-                    
+
                     # Read full file
                     full_df = pd.read_csv(
                         io.StringIO("\n".join(lines[skip:])),
                         sep=sep,
-                        encoding="utf-8",
                         on_bad_lines="skip",
                     )
-                    
+
                     result = pd.DataFrame()
                     result["date"] = pd.to_datetime(full_df[date_col], dayfirst=True, errors="coerce")
                     result["desc"] = full_df[desc_col].fillna("—") if desc_col else "—"
-                    
+
                     # Parse amount
                     amt = full_df[amount_col].astype(str).str.replace(r"\s", "", regex=True)
                     amt = amt.str.replace("PLN", "", regex=False).str.replace(",", ".", regex=False)
                     result["amount"] = pd.to_numeric(amt, errors="coerce")
                     result = result.dropna(subset=["amount", "date"])
                     result["category"] = ""
-                    
+
                     if len(result) > 0:
                         return result, bank_name
-                        
+
             except Exception:
                 continue
-    
+
     raise ValueError("Nie udało się rozpoznać formatu pliku CSV. Sprawdź czy to wyciąg bankowy.")
 
 
@@ -384,7 +404,7 @@ if st.session_state.df is None:
     if uploaded:
         with st.spinner("Wczytuję i parsuję plik..."):
             try:
-                content = uploaded.read().decode("utf-8", errors="replace")
+                content = decode_file(uploaded.read())
                 df, bank_name = detect_bank_and_parse(content)
                 st.session_state.df = df
                 st.session_state.bank_name = bank_name
