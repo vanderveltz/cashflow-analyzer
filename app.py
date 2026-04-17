@@ -15,12 +15,15 @@ from reportlab.lib.units import cm
 
 # ── API Key resolution (env var or Streamlit secrets) ─────────────────────────
 def get_api_key() -> str | None:
+    # Env var first (Render, local) — avoids touching st.secrets entirely
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if key:
+        return key
+    # Streamlit Cloud secrets fallback
     try:
-        if "ANTHROPIC_API_KEY" in st.secrets:
-            return st.secrets["ANTHROPIC_API_KEY"]
-    except FileNotFoundError:
-        pass
-    return os.environ.get("ANTHROPIC_API_KEY")
+        return st.secrets.get("ANTHROPIC_API_KEY")
+    except Exception:
+        return None
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
