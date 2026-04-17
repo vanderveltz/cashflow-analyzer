@@ -104,7 +104,7 @@ BANK_CONFIGS = {
         "skip_rows": 25,
     },
     "PKO BP": {
-        "detect": lambda h: any("data transakcji" in x.lower() for x in h),
+        "detect": lambda h: any("data transakcji" in x.lower() for x in h) and any("kwota" in x.lower() for x in h),
         "date": lambda h: next((x for x in h if "data transakcji" in x.lower()), None),
         "desc": lambda h: next((x for x in h if "opis transakcji" in x.lower() or "tytuł" in x.lower()), None),
         "amount": lambda h: next((x for x in h if "kwota" in x.lower()), None),
