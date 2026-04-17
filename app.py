@@ -120,15 +120,15 @@ BANK_CONFIGS = {
         "skip_rows": 0,
     },
     "Millennium": {
-        "detect": lambda h: any("millennium" in x.lower() for x in h) or any(
-            ("data transakcji" in x.lower() or "data operacji" in x.lower()) and
-            any("rodzaj" in y.lower() or "saldo" in y.lower() for y in h)
-            for x in h
-        ),
+        # Unique to Millennium: split debit/credit columns
+        "detect": lambda h: any("obci" in x.lower() for x in h) and any("uzna" in x.lower() for x in h),
         "date": lambda h: next((x for x in h if "data transakcji" in x.lower() or "data operacji" in x.lower()), None),
-        "desc": lambda h: next((x for x in h if "tytuł" in x.lower() or "opis" in x.lower() or "nadawca" in x.lower()), None),
-        "amount": lambda h: next((x for x in h if "kwota" in x.lower()), None),
-        "sep": ";",
+        "desc": lambda h: next((x for x in h if "opis" in x.lower()), None),
+        "desc2": lambda h: next((x for x in h if "odbiorca" in x.lower() or "zleceniodawca" in x.lower()), None),
+        "amount": None,  # handled via debit/credit split
+        "debit": lambda h: next((x for x in h if "obci" in x.lower()), None),
+        "credit": lambda h: next((x for x in h if "uzna" in x.lower()), None),
+        "sep": ",",
         "skip_rows": 0,
     },
 }
@@ -176,9 +176,15 @@ def detect_bank_and_parse(content: str) -> tuple[pd.DataFrame, str]:
 
                     date_col = cfg["date"](headers)
                     desc_col = cfg["desc"](headers)
-                    amount_col = cfg["amount"](headers)
+                    amount_col = cfg.get("amount") and cfg["amount"](headers) if callable(cfg.get("amount")) else None
 
-                    if not (date_col and amount_col):
+                    # Millennium-style split debit/credit
+                    debit_col = cfg["debit"](headers) if "debit" in cfg else None
+                    credit_col = cfg["credit"](headers) if "credit" in cfg else None
+                    desc2_col = cfg["desc2"](headers) if "desc2" in cfg else None
+
+                    has_amount = amount_col or (debit_col and credit_col)
+                    if not (date_col and has_amount):
                         continue
 
                     # Read full file
@@ -190,13 +196,31 @@ def detect_bank_and_parse(content: str) -> tuple[pd.DataFrame, str]:
 
                     result = pd.DataFrame()
                     result["date"] = pd.to_datetime(full_df[date_col], dayfirst=True, errors="coerce")
-                    result["desc"] = full_df[desc_col].fillna("—") if desc_col else "—"
+
+                    # Build description
+                    if desc2_col and desc2_col in full_df.columns:
+                        result["desc"] = (
+                            full_df[desc2_col].fillna("").astype(str).str.strip()
+                            + " – "
+                            + full_df[desc_col].fillna("").astype(str).str.strip()
+                        ).str.strip(" –")
+                    else:
+                        result["desc"] = full_df[desc_col].fillna("—") if desc_col else "—"
 
                     # Parse amount
-                    amt = full_df[amount_col].astype(str).str.replace(r"\s", "", regex=True)
-                    amt = amt.str.replace("PLN", "", regex=False).str.replace(",", ".", regex=False)
-                    result["amount"] = pd.to_numeric(amt, errors="coerce")
-                    result = result.dropna(subset=["amount", "date"])
+                    def clean_amt(series):
+                        s = series.astype(str).str.replace(r"\s", "", regex=True)
+                        s = s.str.replace("PLN", "", regex=False).str.replace(",", ".", regex=False)
+                        return pd.to_numeric(s, errors="coerce").fillna(0)
+
+                    if debit_col and credit_col:
+                        debits = clean_amt(full_df[debit_col])    # already negative
+                        credits = clean_amt(full_df[credit_col])  # positive
+                        result["amount"] = debits + credits
+                    else:
+                        result["amount"] = clean_amt(full_df[amount_col])
+
+                    result = result[result["amount"] != 0].dropna(subset=["date"])
                     result["category"] = ""
 
                     if len(result) > 0:
